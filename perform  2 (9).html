@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>氣體擴散模擬器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #000;
+            color: #fff;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .simulator {
+            display: flex;
+            flex-direction: row;
+            background-color: #222;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .simulation-area {
+            position: relative;
+            width: 600px;
+            height: 450px;
+            border: 2px solid #fff;
+            overflow: hidden;
+            background-color: #111;
+        }
+
+        .control-panel {
+            margin-left: 20px;
+            padding: 20px;
+            background-color: #333;
+            border-radius: 10px;
+            width: 220px;
+        }
+
+        .control-panel h2 {
+            margin-top: 0;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        .control-panel label {
+            display: block;
+            margin: 10px 0 5px;
+        }
+
+        .control-panel input {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            font-size: 14px;
+            border-radius: 5px;
+            border: none;
+        }
+
+        .control-panel button {
+            margin-top: 20px;
+            padding: 10px;
+            width: 100%;
+            background-color: #444;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        .control-panel button:hover {
+            background-color: #555;
+        }
+
+        .divider {
+            position: absolute;
+            width: 300px;
+            height: 100%;
+            border: 2px solid #fff;
+            left: 300px;
+            display: none;
+        }
+
+        .slider-container {
+            margin-top: 10px;
+        }
+
+        .slider {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+<div class="simulator">
+    <div class="simulation-area">
+        <canvas id="simulationCanvas" width="600" height="450"></canvas>
+        <div class="divider"></div>
+    </div>
+    <div class="control-panel">
+        <h2>紅色粒子參數</h2>
+        <label>粒子數量:</label>
+        <input type="number" id="red-particle-count" value="25" min="0" max="50" onchange="updateRedParticleCount()">
+        <label>粒子質量 (AMU):</label>
+        <input type="number" id="red-particle-mass" value="28" min="1" max="100" onchange="updateRedParticleMass()">
+        <label>粒子半徑 (皮米):</label>
+        <input type="number" id="red-particle-radius" value="10" min="5" max="25" onchange="updateRedParticleRadius()">
+        <label>粒子初始溫度 (K):</label>
+        <input type="number" id="red-particle-temperature" value="300" min="0" max="500" onchange="updateRedParticleTemperature()">
+    </div>
+    <div class="control-panel">
+        <h2>藍色粒子參數</h2>
+        <label>粒子數量:</label>
+        <input type="number" id="blue-particle-count" value="25" min="0" max="50" onchange="updateBlueParticleCount()">
+        <label>粒子質量 (AMU):</label>
+        <input type="number" id="blue-particle-mass" value="28" min="1" max="100" onchange="updateBlueParticleMass()">
+        <label>粒子半徑 (皮米):</label>
+        <input type="number" id="blue-particle-radius" value="10" min="5" max="25" onchange="updateBlueParticleRadius()">
+        <label>粒子初始溫度 (K):</label>
+        <input type="number" id="blue-particle-temperature" value="300" min="0" max="500" onchange="updateBlueParticleTemperature()">
+        <button onclick="toggleDivider()">移除/添加分隔器</button>
+        <div class="slider-container">
+            <label>速度：</label>
+            <input type="range" id="speed-slider" class="slider" min="1" max="100" value="50" onchange="updateSpeed()">
+        </div>
+        <button onclick="resetSimulation()">重置模擬</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('simulationCanvas');
+    const ctx = canvas.getContext('2d');
+    const redParticleCountInput = document.getElementById('red-particle-count');
+    const blueParticleCountInput = document.getElementById('blue-particle-count');
+    const redParticleMassInput = document.getElementById('red-particle-mass');
+    const blueParticleMassInput = document.getElementById('blue-particle-mass');
+    const redParticleRadiusInput = document.getElementById('red-particle-radius');
+    const blueParticleRadiusInput = document.getElementById('blue-particle-radius');
+    const redParticleTemperatureInput = document.getElementById('red-particle-temperature');
+    const blueParticleTemperatureInput = document.getElementById('blue-particle-temperature');
+    const speedSlider = document.getElementById('speed-slider');
+    const divider = document.querySelector('.divider');
+
+    let particles = [];
+    let animationFrameId;
+    let simulationSpeed = 1;
+
+    class Particle {
+        constructor(x, y, radius, color, vx, vy) {
+            this.x = x;
+            this.y = y;
+            this.radius = radius;
+            this.color = color;
+            this.vx = vx;
+            this.vy = vy;
+        }
+
+        move() {
+            this.x += this.vx * simulationSpeed;
+            this.y += this.vy * simulationSpeed;
+
+            if (this.x - this.radius <= 0 || this.x + this.radius >= canvas.width) {
+                this.vx = -this.vx;
+            }
+            if (this.y - this.radius <= 0 || this.y + this.radius >= canvas.height) {
+                this.vy = -this.vy;
+            }
+
+            if (divider.style.display === 'block') {
+                if (this.x <= canvas.width / 2) {
+                    this.vx = Math.abs(this.vx);
+                } else {
+                    this.vx = -Math.abs(this.vx);
+                }
+            }
+        }
+
+        draw() {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fillStyle = this.color;
+            ctx.fill();
+        }
+    }
+
+    function createParticles() {
+        const redParticleCount = parseInt(redParticleCountInput.value);
+        const blueParticleCount = parseInt(blueParticleCountInput.value);
+        const redParticleRadius = parseFloat(redParticleRadiusInput.value);
+        const blueParticleRadius = parseFloat(blueParticleRadiusInput.value);
+        const redParticleTemperature = parseFloat(redParticleTemperatureInput.value);
+        const blueParticleTemperature = parseFloat(blueParticleTemperatureInput.value);
+        const redParticleMass = parseFloat(redParticleMassInput.value);
+        const blueParticleMass = parseFloat(blueParticleMassInput.value);
+        particles = [];
+
+        for (let i = 0; i < redParticleCount; i++) {
+            const x = Math.random() * (canvas.width / 2);
+            const y = Math.random() * canvas.height;
+            const vx = (Math.random() * 2 - 1) * redParticleTemperature / 10;
+            const vy = (Math.random() * 2 - 1) * redParticleTemperature / 10;
+            particles.push(new Particle(x, y, redParticleRadius, 'red', vx, vy));
+        }
+
+        for (let i = 0; i < blueParticleCount; i++) {
+            const x = Math.random() * (canvas.width / 2) + canvas.width / 2;
+            const y = Math.random() * canvas.height;
+            const vx = (Math.random() * 2 - 1) * blueParticleTemperature / 10;
+            const vy = (Math.random() * 2 - 1) * blueParticleTemperature / 10;
+            particles.push(new Particle(x, y, blueParticleRadius, 'blue', vx, vy));
+        }
+        animateParticles();
+    }
+
+    function animateParticles() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        particles.forEach(particle => {
+            particle.move();
+            particle.draw();
+        });
+
+        animationFrameId = requestAnimationFrame(animateParticles);
+    }
+
+    function updateRedParticleCount() {
+        createParticles();
+    }
+
+    function updateBlueParticleCount() {
+        createParticles();
+    }
+
+    function updateRedParticleMass() {
+        createParticles();
+    }
+
+    function updateBlueParticleMass() {
+        createParticles();
+    }
+
+    function updateRedParticleRadius() {
+        createParticles();
+    }
+
+    function updateBlueParticleRadius() {
+        createParticles();
+    }
+
+    function updateRedParticleTemperature() {
+        particles.forEach(particle => {
+            if (particle.color === 'red') {
+                const temperature = parseFloat(redParticleTemperatureInput.value);
+                particle.vx = (Math.random() * 2 - 1) * temperature / 10;
+                particle.vy = (Math.random() * 2 - 1) * temperature / 10;
+            }
+        });
+    }
+
+    function updateBlueParticleTemperature() {
+        particles.forEach(particle => {
+            if (particle.color === 'blue') {
+                const temperature = parseFloat(blueParticleTemperatureInput.value);
+                particle.vx = (Math.random() * 2 - 1) * temperature / 10;
+                particle.vy = (Math.random() * 2 - 1) * temperature / 10;
+            }
+        });
+    }
+
+    function updateSpeed() {
+        simulationSpeed = speedSlider.value / 50;
+    }
+
+    function toggleDivider() {
+        if (divider.style.display === 'none') {
+            divider.style.display = 'block';
+            createParticles();
+        } else {
+            divider.style.display = 'none';
+            createParticles();
+        }
+    }
+
+    function resetSimulation() {
+        createParticles();
+    }
+
+    createParticles();
+</script>
+</body>
+</html>
